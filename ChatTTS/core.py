@@ -2,6 +2,7 @@
 import os
 import json
 import logging
+from datetime import timedelta
 from functools import partial
 from typing import Literal
 import tempfile
@@ -18,6 +19,7 @@ from .utils.infer_utils import count_invalid_characters, detect_language, apply_
 from .utils.io_utils import get_latest_modified_file
 from .infer.api import refine_text, infer_code
 from .utils.download import check_all_assets, download_all_assets
+from .utils.tts_utils import split_text_by_multiple_breaks, format_timedelta, text_Replace_Tone
 
 logging.basicConfig(level = logging.INFO)
 
@@ -28,6 +30,7 @@ class Chat:
         self.normalizer = {}
         self.homophones_replacer = None
         self.logger = logging.getLogger(__name__)
+        self.text = ''
         
     def check_model(self, level = logging.INFO, use_decoder = False):
         not_finish = False
@@ -197,6 +200,13 @@ class Chat:
 
         text = [params_infer_code.get('prompt', '') + i for i in text]
         params_infer_code.pop('prompt', '')
+        # TODO  分段符号
+        break_markers = ["[uv_break]", "[lbreak]"]
+        # TODO add simple 拼接数据
+        textTmp = ''.join(text)
+        # TODO 动态修改分段数据
+        text = split_text_by_multiple_breaks(textTmp,break_markers)
+        self.text = text
         result_gen = infer_code(self.pretrain_models, text, **params_infer_code, return_hidden=use_decoder, stream=stream)
         if use_decoder:
             field = 'hiddens'
@@ -256,8 +266,28 @@ class Chat:
         if stream:
             return res_gen
         else:
-            return next(res_gen)
-    
+            l = next(res_gen)
+            # TODO  分段符号
+            break_markers = ["[uv_break]", "[lbreak]"]
+            srt_entries = []
+            current_time = timedelta()
+            #TODO 拼接字幕文件数据
+            for i, wavItem in enumerate(l):
+                # Estimate duration based on sample rate and length of wav
+                duration = timedelta(seconds=wavItem.shape[1] / 24000)  # Assuming 24000 Hz sample rate
+                end_time = current_time + duration
+                srt_entries.append({
+                    'index': i + 1,
+                    'start': format_timedelta(current_time),
+                    'end': format_timedelta(end_time),
+                    'text': text_Replace_Tone(self.text[i].replace(" ", ""),break_markers)
+                })
+                current_time = end_time
+            self.logger.log(logging.WARNING, f'srt_entries {srt_entries}')
+
+            self.logger.log(logging.WARNING, f'text {self.text}')
+            return l,srt_entries
+
     def sample_random_speaker(self, ):
         
         dim = self.pretrain_models['gpt'].gpt.layers[0].mlp.gate_proj.in_features

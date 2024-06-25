@@ -5,6 +5,9 @@ import io
 import json
 import wave
 from pathlib import Path
+
+from ChatTTS.utils.tts_utils import remove_suffix
+
 print('Starting...')
 import torch
 import torch._dynamo
@@ -220,7 +223,7 @@ def tts():
     if text_seed>0:
         torch.manual_seed(text_seed)
 
-    wavs = chat.infer(new_text, use_decoder=True,stream=True if is_stream==1 else False)
+    wavs,srt_entries = chat.infer(new_text, use_decoder=True,stream=True if is_stream==1 else False)
     combined_wavdata=None
 
 
@@ -243,10 +246,13 @@ def tts():
     
     filename = datetime.datetime.now().strftime('%H%M%S_')+f"use{inference_time_rounded}s-audio{audio_duration_rounded}s-seed{voice}-te{temperature}-tp{top_p}-tk{top_k}-textlen{len(text)}-{str(random())[2:7]}" + ".wav"
     sf.write(WAVS_DIR+'/'+filename, combined_wavdata, 24000)
-
+    srtName = remove_suffix(filename,".wav") + ".srt"
+    filenameStr = WAVS_DIR+'/'+srtName
+    print(f"filenameStr: {filenameStr} ")
     audio_files.append({
         "filename": WAVS_DIR + '/' + filename,
         "url": f"http://{request.host}/static/wavs/{filename}",
+        "srtUrl": f"http://{request.host}/static/wavs/{srtName}",
         "inference_time": inference_time_rounded,
         "audio_duration": audio_duration_rounded
     })
